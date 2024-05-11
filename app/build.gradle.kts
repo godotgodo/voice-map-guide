@@ -68,6 +68,7 @@ dependencies {
     implementation ("com.google.code.gson:gson:2.8.8")
     implementation ("com.google.maps:google-maps-services:0.15.0")
     implementation(libs.junit)
+    implementation(libs.play.services.location)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
