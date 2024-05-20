@@ -18,7 +18,6 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.widget.Button
-import android.widget.EditText
 import android.widget.Toast
 import androidx.compose.ui.graphics.Color
 import androidx.core.app.ActivityCompat
@@ -41,28 +40,30 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.Locale
 
-class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
+class MainActivity : FragmentActivity(), TextToSpeech.OnInitListener {
 
     lateinit var tts: TextToSpeech
     private lateinit var speechRecognizer: SpeechRecognizer
     private lateinit var intent: Intent
-    var speechDestination : String? = ""
-    var oldDestination : String = ""
+    var speechDestination: String? = ""
+    var oldDestination: String = ""
+    private var handler: Handler? = null
+    private var runnable: Runnable? = null
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         when (requestCode) {
             9 -> {
                 if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    print("bildin geç")
+                    print("Permission granted")
                 } else {
-                    print("Arıza var.")
+                    print("Permission denied")
                 }
                 return
             }
-            // Add more cases if you have multiple permissions to request
         }
     }
+
     override fun onCreate(savedInstanceState: Bundle?) {
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
@@ -75,9 +76,6 @@ class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
             )
         }
 
-
-
-
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
         intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -87,8 +85,8 @@ class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
             override fun onResults(results: Bundle) {
                 val data = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 speechDestination = data?.get(0)
-                // Use the speech input as a string
                 Toast.makeText(this@MainActivity, "Speech input: $speechDestination", Toast.LENGTH_SHORT).show()
+                startRouteCalculation()
             }
 
             override fun onPartialResults(partialResults: Bundle?) {
@@ -127,8 +125,7 @@ class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
 
         tts = TextToSpeech(this, this)
 
-        if(SpeechRecognizer.isRecognitionAvailable(this))
-        {
+        if (SpeechRecognizer.isRecognitionAvailable(this)) {
             print(true)
         }
 
@@ -138,71 +135,55 @@ class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.act)
 
-        // Get the SupportMapFragment instance
         val mapFragment = supportFragmentManager.findFragmentById(R.id.map) as SupportMapFragment
 
-        // Initialize the GoogleMap object
         mapFragment.getMapAsync { googleMap ->
-            // Set the map type
             googleMap.mapType = GoogleMap.MAP_TYPE_NORMAL
 
-            // Check for location permission
             if (ActivityCompat.checkSelfPermission(
                     this,
                     android.Manifest.permission.ACCESS_FINE_LOCATION
                 ) == PackageManager.PERMISSION_GRANTED
             ) {
-                // Get the current location
                 val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
                 val location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
 
-                // Zoom to the current location
                 if (location != null) {
                     val latLng = LatLng(location.latitude, location.longitude)
                     googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 15f))
                 }
             } else {
-                // Request location permission
                 ActivityCompat.requestPermissions(
                     this,
                     arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION),
                     1
                 )
             }
-            // Check for location permission
+
             if (ActivityCompat.checkSelfPermission(
                     this,
                     android.Manifest.permission.ACCESS_FINE_LOCATION
                 ) == PackageManager.PERMISSION_GRANTED
             ) {
-                // Enable the My Location layer
                 googleMap.isMyLocationEnabled = true
 
-                // Get the current location
                 val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
                 val location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
 
-                // Add a marker for the current location
                 if (location != null) {
                     val latLng = LatLng(location.latitude, location.longitude)
-
                     googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 15f))
                 }
 
-                // Update the marker when the location changes
                 val locationListener = object : LocationListener {
                     override fun onLocationChanged(location: Location) {
-                       /* val latLng = LatLng(location.latitude, location.longitude)
-
-                        googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 15f)) */
-
+                        // Location change handling
                     }
 
                     override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
                 }
                 locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0f, locationListener)
             } else {
-                // Request location permission
                 ActivityCompat.requestPermissions(
                     this,
                     arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION),
@@ -210,152 +191,161 @@ class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
                 )
             }
         }
+        speak("Ekrana tıklayın ve gitmek istediğiniz yeri söyleyin.")
 
         val myButton: Button = findViewById(R.id.myButton)
-        val speechBtn : Button = findViewById(R.id.speechBtn)
-        speechBtn.setOnClickListener {
-            speechRecognizer.startListening(intent)
-           
-        }
-
 
         myButton.setOnClickListener {
+            stopRouteCalculation()
+            speechRecognizer.startListening(intent)
+        }
 
+    }
 
+    private fun stopRouteCalculation() {
+        handler?.removeCallbacks(runnable!!)
+    }
 
+    private fun startRouteCalculation() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val repeatIntervalMillis = 10000L
 
-            lifecycleScope.launch(Dispatchers.IO) {
-                val repeatIntervalMillis = 10000L
+            handler = Handler(Looper.getMainLooper())
+            runnable = object : Runnable {
+                override fun run() {
 
-                val handler = Handler(Looper.getMainLooper())
-                val runnable = object : Runnable {
-                    override fun run() {
-                        val editText = findViewById<EditText>(R.id.edText)
+                    val apiKey = "apikey"
+                    val mode = "walking"
 
-                        val apiKey = "apikey"
-                        val mode = "walking"
+                    val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this@MainActivity)
 
-                        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this@MainActivity)
+                    if (ActivityCompat.checkSelfPermission(
+                            this@MainActivity,
+                            Manifest.permission.ACCESS_FINE_LOCATION
+                        ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
+                            this@MainActivity,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        Log.e("Location", "Permission not granted")
+                        return
+                    }
 
-                        if (ActivityCompat.checkSelfPermission(
-                                this@MainActivity,
-                                Manifest.permission.ACCESS_FINE_LOCATION
-                            ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
-                                this@MainActivity,
-                                Manifest.permission.ACCESS_COARSE_LOCATION
-                            ) != PackageManager.PERMISSION_GRANTED
-                        ) {
-                            Log.e("Location", "Permission not granted")
-                            return
-                        }
+                    fusedLocationClient.lastLocation
+                        .addOnSuccessListener { location ->
+                            location?.let { currentLocation ->
+                                val (userLatitude, userLongitude) = currentLocation.latitude to currentLocation.longitude
+                                val currentLocationString = "$userLatitude,$userLongitude"
 
-                        fusedLocationClient.lastLocation
-                            .addOnSuccessListener { location ->
-                                location?.let { currentLocation ->
-                                    val (userLatitude, userLongitude) = currentLocation.latitude to currentLocation.longitude
-                                    val currentLocationString = "$userLatitude,$userLongitude"
+                                val destinationText = replaceTurkishChars(speechDestination.toString()).replace(" ", "+")
+                                val geocodingUrl = "https://maps.googleapis.com/maps/api/geocode/json?address=$destinationText&key=$apiKey"
+                                val geocodingClient = OkHttpClient()
+                                val geocodingRequest = Request.Builder().url(geocodingUrl).build()
 
-                                  //  val destinationText = editText.text.toString().replace(" ", "+")
-                                    val destinationText = replaceTurkishChars(speechDestination.toString()).replace(" ", "+")
-                                    val geocodingUrl = "https://maps.googleapis.com/maps/api/geocode/json?address=$destinationText&key=$apiKey"
-                                    val geocodingClient = OkHttpClient()
-                                    val geocodingRequest = Request.Builder().url(geocodingUrl).build()
+                                geocodingClient.newCall(geocodingRequest).execute().use { geocodingResponse ->
+                                    if (!geocodingResponse.isSuccessful) {
+                                        println("Tekrar et")
+                                        return@use
+                                    }
 
-                                     geocodingClient.newCall(geocodingRequest).execute().use { geocodingResponse ->
-                                        if (!geocodingResponse.isSuccessful)
-                                            println("Tekrar et")
+                                    val geocodingJsonResponse = JSONObject(geocodingResponse.body!!.string())
+                                    val results = geocodingJsonResponse.getJSONArray("results")
 
-                                        val geocodingJsonResponse = JSONObject(geocodingResponse.body!!.string())
-                                        val results = geocodingJsonResponse.getJSONArray("results")
+                                    if (results.length() > 0) {
+                                        val firstResult = results.getJSONObject(0)
+                                        val geometry = firstResult.getJSONObject("geometry")
+                                        val location = geometry.getJSONObject("location")
+                                        val destinationLatitude = location.getDouble("lat")
+                                        val destinationLongitude = location.getDouble("lng")
+                                        val destination = "$destinationLatitude,$destinationLongitude"
 
-                                        if (results.length() > 0) {
-                                            val firstResult = results.getJSONObject(0)
-                                            val geometry = firstResult.getJSONObject("geometry")
-                                            val location = geometry.getJSONObject("location")
-                                            val destinationLatitude = location.getDouble("lat")
-                                            val destinationLongitude = location.getDouble("lng")
-                                            val destination = "$destinationLatitude,$destinationLongitude"
-                                            if(destination != ","){
-                                                val url = "https://maps.googleapis.com/maps/api/directions/json?" +
-                                                        "origin=$currentLocationString" +
-                                                        "&destination=$destination" +
-                                                        "&mode=$mode" +
-                                                        "&key=$apiKey"
+                                        if (destination == currentLocationString) {
+                                            Toast.makeText(this@MainActivity, "Zaten hedef konumdasınız.", Toast.LENGTH_SHORT).show()
+                                            return@use
+                                        }
 
-                                                val client = OkHttpClient()
-                                                val request = Request.Builder()
-                                                    .url(url)
-                                                    .build()
-                                                client.newCall(request).execute().use { response ->
-                                                    if (!response.isSuccessful) throw IOException("Failed to get directions: $response")
-                                                    val jsonResponse = JSONObject(response.body!!.string())
-                                                    val routes = jsonResponse.getJSONArray("routes")
-                                                    if (routes.length() > 0) {
-                                                        val firstRoute = routes.getJSONObject(0)
-                                                        val legs = firstRoute.getJSONArray("legs")
-                                                        val firstLeg = legs.getJSONObject(0)
-                                                        val steps = firstLeg.getJSONArray("steps")
-                                                        if (steps.length() > 0) {
-                                                            val firstStep = steps.getJSONObject(0)
-                                                            val distance =
-                                                                firstStep.getJSONObject("distance")
-                                                            val meters = distance.get("value")
-                                                            try {
-                                                                val maneuver =
-                                                                    firstStep.get("maneuver")
-                                                                val instruction =
-                                                                    (meters.toString() + " metre sonra " + maneuver.toString())
-                                                                print(instruction)
+                                        if (destination != ",") {
+                                            val url = "https://maps.googleapis.com/maps/api/directions/json?" +
+                                                    "origin=$currentLocationString" +
+                                                    "&destination=$destination" +
+                                                    "&mode=$mode" +
+                                                    "&key=$apiKey"
 
-                                                                            speak(instruction)
+                                            val client = OkHttpClient()
+                                            val request = Request.Builder()
+                                                .url(url)
+                                                .build()
+                                            client.newCall(request).execute().use { response ->
+                                                if (!response.isSuccessful) throw IOException("Failed to get directions: $response")
+                                                val jsonResponse = JSONObject(response.body!!.string())
+                                                val routes = jsonResponse.getJSONArray("routes")
+                                                if (routes.length() > 0) {
+                                                    val firstRoute = routes.getJSONObject(0)
+                                                    var legs = firstRoute.getJSONArray("legs")
+                                                    val firstLeg = legs.getJSONObject(0)
+                                                    val steps = firstLeg.getJSONArray("steps")
+                                                    if (legs.length() == 1 && steps.length() == 1) {
+                                                        val lastStep = steps.getJSONObject(0)
+                                                        val lastDistance = lastStep.getJSONObject("distance").getInt("value")
+                                                        if (lastDistance <= 5) {
+                                                            speak("Hedefe vardınız")
+                                                            stopRouteCalculation()
+                                                            return@use
+                                                        }
+                                                    }
+                                                    else if (steps.length() > 0) {
+                                                        val firstStep = steps.getJSONObject(0)
+                                                        val distance = firstStep.getJSONObject("distance")
+                                                        val meters = distance.get("value")
+                                                        try {
+                                                            val maneuver = firstStep.get("maneuver")
+                                                            val instruction = (meters.toString() + " metre sonra " + maneuver.toString())
+                                                            print(instruction)
 
-                                                            } catch (e: Exception) {
-                                                                if (e is org.json.JSONException) {
-                                                                    val instruction =
-                                                                        (meters.toString() + " metre boyunca devam edin")
-                                                                    println(instruction)
+                                                            speak(instruction)
 
-                                                                        speak(instruction)
+                                                        } catch (e: Exception) {
+                                                            if (e is org.json.JSONException) {
+                                                                val instruction = (meters.toString() + " metre boyunca devam edin")
+                                                                println(instruction)
 
-                                                                }
+                                                                speak(instruction)
+
                                                             }
                                                         }
                                                     }
-                                                    if (routes.length() > 0) {
-                                                        val firstRoute = routes.getJSONObject(0)
-                                                        val polyline = firstRoute.getJSONObject("overview_polyline").getString("points")
 
-                                                        if(oldDestination != destination || oldDestination == "")
-                                                        {
-                                                            runOnUiThread {
+                                                    // Check if the user is near the destination
 
-                                                                drawRoute(polyline, destinationLatitude, destinationLongitude)
+                                                }
+                                                if (routes.length() > 0) {
+                                                    val firstRoute = routes.getJSONObject(0)
+                                                    val polyline = firstRoute.getJSONObject("overview_polyline").getString("points")
 
-                                                            }
-                                                       }
-                                                        oldDestination = destination
-
+                                                    if (oldDestination != destination || oldDestination == "") {
+                                                        runOnUiThread {
+                                                            drawRoute(polyline, destinationLatitude, destinationLongitude)
+                                                        }
                                                     }
+                                                    oldDestination = destination
                                                 }
                                             }
-                                        } else {
-                                            Log.e("Geocode", "Geocode results not found")
                                         }
+                                    } else {
+                                        Log.e("Geocode", "Geocode results not found")
                                     }
                                 }
-
                             }
+                        }
 
-                            .addOnFailureListener { exception ->
-                                Log.e("Location", "Failed to get location: ${exception.message}")
-                            }
+                        .addOnFailureListener { exception ->
+                            Log.e("Location", "Failed to get location: ${exception.message}")
+                        }
 
-                        handler.postDelayed(this, repeatIntervalMillis)
-                    }
+                    handler?.postDelayed(this, repeatIntervalMillis)
                 }
-                handler.post(runnable)
-
             }
+            handler?.post(runnable!!)
         }
     }
 
@@ -386,7 +376,6 @@ class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
     fun drawRoute(polyline: String, destinationLat: Double, destinationLng: Double) {
         val mapFragment = supportFragmentManager.findFragmentById(R.id.map) as SupportMapFragment?
         mapFragment?.getMapAsync { googleMap ->
-
             googleMap.clear()
             val decodedPath = PolylineEncoding.decode(polyline)
             val options = PolylineOptions()
@@ -397,7 +386,6 @@ class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
             options.color(Color.Blue.hashCode())
             googleMap.addMarker(MarkerOptions().position(LatLng(destinationLat, destinationLng)).title("Destination"))
             googleMap.addPolyline(options)
-
         }
     }
 
@@ -407,6 +395,7 @@ class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
             tts.setSpeechRate(1.0f)
         }
     }
+
     fun speak(text: String) {
         if (::tts.isInitialized) {
             tts.language = Locale.forLanguageTag("tr")
