@@ -45,6 +45,7 @@ class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
 
     lateinit var tts: TextToSpeech
     private lateinit var speechRecognizer: SpeechRecognizer
+    private lateinit var intent: Intent
     var speechDestination : String? = ""
     var oldDestination : String = ""
 
@@ -78,6 +79,52 @@ class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
 
 
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+        intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "tr-TR")
+
+        speechRecognizer.setRecognitionListener(object : RecognitionListener {
+            override fun onResults(results: Bundle) {
+                val data = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                speechDestination = data?.get(0)
+                // Use the speech input as a string
+                Toast.makeText(this@MainActivity, "Speech input: $speechDestination", Toast.LENGTH_SHORT).show()
+            }
+
+            override fun onPartialResults(partialResults: Bundle?) {
+                println("onpartialresults")
+            }
+
+            override fun onEvent(eventType: Int, params: Bundle?) {
+                println("onevents")
+            }
+
+            override fun onError(error: Int) {
+                println(error)
+                Toast.makeText(this@MainActivity, "Error: $error", Toast.LENGTH_SHORT).show()
+            }
+
+            override fun onReadyForSpeech(params: Bundle?) {
+                println("onreadyforspeech")
+            }
+
+            override fun onBeginningOfSpeech() {
+                println("onbegg")
+            }
+
+            override fun onRmsChanged(rmsdB: Float) {
+                println("onrmschanged")
+            }
+
+            override fun onBufferReceived(buffer: ByteArray?) {
+                println("onbuffer")
+            }
+
+            override fun onEndOfSpeech() {
+                println("onendof")
+            }
+        })
+
         tts = TextToSpeech(this, this)
 
         if(SpeechRecognizer.isRecognitionAvailable(this))
@@ -164,57 +211,17 @@ class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
             }
         }
 
-
-
         val myButton: Button = findViewById(R.id.myButton)
-        myButton.setOnClickListener {
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "tr-TR")
-
-            speechRecognizer.setRecognitionListener(object : RecognitionListener {
-                override fun onResults(results: Bundle) {
-                    val data = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    speechDestination = data?.get(0)
-                    // Use the speech input as a string
-                    Toast.makeText(this@MainActivity, "Speech input: $speechDestination", Toast.LENGTH_SHORT).show()
-                }
-
-                override fun onPartialResults(partialResults: Bundle?) {
-                    println("onpartialresults")
-                }
-
-                override fun onEvent(eventType: Int, params: Bundle?) {
-                    println("onevents")
-                }
-
-                override fun onError(error: Int) {
-                    println(error)
-                    Toast.makeText(this@MainActivity, "Error: $error", Toast.LENGTH_SHORT).show()
-                }
-
-                override fun onReadyForSpeech(params: Bundle?) {
-                    println("onreadyforspeech")
-                }
-
-                override fun onBeginningOfSpeech() {
-                    println("onbegg")
-                }
-
-                override fun onRmsChanged(rmsdB: Float) {
-                    TODO("Not yet implemented")
-                }
-
-                override fun onBufferReceived(buffer: ByteArray?) {
-                    TODO("Not yet implemented")
-                }
-
-                override fun onEndOfSpeech() {
-                    println("onendof")
-                }
-            })
-
+        val speechBtn : Button = findViewById(R.id.speechBtn)
+        speechBtn.setOnClickListener {
             speechRecognizer.startListening(intent)
+           
+        }
+
+
+        myButton.setOnClickListener {
+
+
 
 
             lifecycleScope.launch(Dispatchers.IO) {
@@ -225,7 +232,7 @@ class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
                     override fun run() {
                         val editText = findViewById<EditText>(R.id.edText)
 
-                        val apiKey = "APIKEY"
+                        val apiKey = "apikey"
                         val mode = "walking"
 
                         val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this@MainActivity)
@@ -249,13 +256,12 @@ class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
                                     val currentLocationString = "$userLatitude,$userLongitude"
 
                                   //  val destinationText = editText.text.toString().replace(" ", "+")
-                                    val destinationText = speechDestination?.replace(" ", "+")
-                                    val geocodingUrl =
-                                        "https://maps.googleapis.com/maps/api/geocode/json?address=$destinationText&key=$apiKey"
+                                    val destinationText = replaceTurkishChars(speechDestination.toString()).replace(" ", "+")
+                                    val geocodingUrl = "https://maps.googleapis.com/maps/api/geocode/json?address=$destinationText&key=$apiKey"
                                     val geocodingClient = OkHttpClient()
                                     val geocodingRequest = Request.Builder().url(geocodingUrl).build()
 
-                                    geocodingClient.newCall(geocodingRequest).execute().use { geocodingResponse ->
+                                     geocodingClient.newCall(geocodingRequest).execute().use { geocodingResponse ->
                                         if (!geocodingResponse.isSuccessful)
                                             println("Tekrar et")
 
@@ -328,7 +334,7 @@ class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
                                                             }
                                                        }
                                                         oldDestination = destination
-                                                        speechRecognizer.destroy()
+
                                                     }
                                                 }
                                             }
@@ -351,6 +357,30 @@ class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
 
             }
         }
+    }
+
+    fun replaceTurkishChars(input: String): String {
+        val turkishChars = mapOf(
+            'ç' to 'c', 'Ç' to 'C',
+            'ğ' to 'g', 'Ğ' to 'G',
+            'ı' to 'i', 'I' to 'I',
+            'İ' to 'I', 'ş' to 's',
+            'Ş' to 'S', 'ö' to 'o',
+            'Ö' to 'O', 'ü' to 'u',
+            'Ü' to 'U'
+        )
+
+        val output = StringBuilder()
+
+        for (char in input) {
+            if (turkishChars.containsKey(char)) {
+                output.append(turkishChars[char])
+            } else {
+                output.append(char)
+            }
+        }
+
+        return output.toString()
     }
 
     fun drawRoute(polyline: String, destinationLat: Double, destinationLng: Double) {
@@ -387,6 +417,7 @@ class MainActivity : FragmentActivity() , TextToSpeech.OnInitListener  {
 
     override fun onDestroy() {
         super.onDestroy()
+        speechRecognizer.destroy()
         tts.shutdown()
     }
 }
