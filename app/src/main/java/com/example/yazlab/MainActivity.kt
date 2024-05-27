@@ -49,6 +49,7 @@ class MainActivity : FragmentActivity(), TextToSpeech.OnInitListener {
     var oldDestination: String = ""
     private var handler: Handler? = null
     private var runnable: Runnable? = null
+    private var googleMap: GoogleMap? = null
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
@@ -137,8 +138,9 @@ class MainActivity : FragmentActivity(), TextToSpeech.OnInitListener {
 
         val mapFragment = supportFragmentManager.findFragmentById(R.id.map) as SupportMapFragment
 
-        mapFragment.getMapAsync { googleMap ->
-            googleMap.mapType = GoogleMap.MAP_TYPE_NORMAL
+        mapFragment.getMapAsync { gMap ->
+            googleMap = gMap
+            googleMap?.mapType = GoogleMap.MAP_TYPE_NORMAL
 
             if (ActivityCompat.checkSelfPermission(
                     this,
@@ -150,7 +152,7 @@ class MainActivity : FragmentActivity(), TextToSpeech.OnInitListener {
 
                 if (location != null) {
                     val latLng = LatLng(location.latitude, location.longitude)
-                    googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 15f))
+                    googleMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 15f))
                 }
             } else {
                 ActivityCompat.requestPermissions(
@@ -165,14 +167,14 @@ class MainActivity : FragmentActivity(), TextToSpeech.OnInitListener {
                     android.Manifest.permission.ACCESS_FINE_LOCATION
                 ) == PackageManager.PERMISSION_GRANTED
             ) {
-                googleMap.isMyLocationEnabled = true
+                googleMap?.isMyLocationEnabled = true
 
                 val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
                 val location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
 
                 if (location != null) {
                     val latLng = LatLng(location.latitude, location.longitude)
-                    googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 15f))
+                    googleMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 15f))
                 }
 
                 val locationListener = object : LocationListener {
@@ -191,7 +193,6 @@ class MainActivity : FragmentActivity(), TextToSpeech.OnInitListener {
                 )
             }
         }
-        speak("Ekrana tıklayın ve gitmek istediğiniz yeri söyleyin.")
 
         val myButton: Button = findViewById(R.id.myButton)
 
@@ -200,6 +201,14 @@ class MainActivity : FragmentActivity(), TextToSpeech.OnInitListener {
             speechRecognizer.startListening(intent)
         }
 
+    }
+
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            tts.language = Locale.forLanguageTag("tr")
+            tts.setSpeechRate(1.0f)
+            speak("Ekrana tıklayın ve gitmek istediğiniz yeri söyleyin.")
+        }
     }
 
     private fun stopRouteCalculation() {
@@ -213,7 +222,6 @@ class MainActivity : FragmentActivity(), TextToSpeech.OnInitListener {
             handler = Handler(Looper.getMainLooper())
             runnable = object : Runnable {
                 override fun run() {
-
                     val apiKey = "apikey"
                     val mode = "walking"
 
@@ -244,7 +252,7 @@ class MainActivity : FragmentActivity(), TextToSpeech.OnInitListener {
 
                                 geocodingClient.newCall(geocodingRequest).execute().use { geocodingResponse ->
                                     if (!geocodingResponse.isSuccessful) {
-                                        println("Tekrar et")
+                                        speak(  "Tekrar et")
                                         return@use
                                     }
 
@@ -260,7 +268,7 @@ class MainActivity : FragmentActivity(), TextToSpeech.OnInitListener {
                                         val destination = "$destinationLatitude,$destinationLongitude"
 
                                         if (destination == currentLocationString) {
-                                            Toast.makeText(this@MainActivity, "Zaten hedef konumdasınız.", Toast.LENGTH_SHORT).show()
+                                            speak("Zaten hedef konumdasınız")
                                             return@use
                                         }
 
@@ -298,8 +306,8 @@ class MainActivity : FragmentActivity(), TextToSpeech.OnInitListener {
                                                         val distance = firstStep.getJSONObject("distance")
                                                         val meters = distance.get("value")
                                                         try {
-                                                            val maneuver = firstStep.get("maneuver")
-                                                            val instruction = (meters.toString() + " metre sonra " + maneuver.toString())
+                                                            val maneuver = firstStep.getString("maneuver")
+                                                            val instruction = (meters.toString() + " metre sonra " + translateManeuver(maneuver))
                                                             print(instruction)
 
                                                             speak(instruction)
@@ -389,18 +397,26 @@ class MainActivity : FragmentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            tts.language = Locale.US
-            tts.setSpeechRate(1.0f)
-        }
-    }
-
     fun speak(text: String) {
         if (::tts.isInitialized) {
             tts.language = Locale.forLanguageTag("tr")
             tts.setSpeechRate(1.0f)
             tts.speak(text, TextToSpeech.QUEUE_ADD, null, "hello_world_utterance")
+        }
+    }
+
+    fun translateManeuver(maneuver: String): String {
+        return when (maneuver) {
+            "turn-right" -> "sağa dön"
+            "turn-left" -> "sola dön"
+            "continue" -> "düz devam et"
+            "elevator" -> "asansör kullan"
+            "stairs" -> "merdiven kullan"
+            "ramp" -> "rampa kullan"
+            "exit" -> "çıkışa yönel"
+            "roundabout-right" -> "sağdan dönel kavşağa gir"
+            "roundabout-left" -> "soldan dönel kavşağa gir"
+            else -> maneuver
         }
     }
 
